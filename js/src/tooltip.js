@@ -191,7 +191,7 @@ class Tooltip extends BaseComponent {
     }
 
     if (event) {
-      const context = this._initialiseOnDelegatedTarget(event)
+      const context = this._initializeOnDelegatedTarget(event)
 
       context._activeTrigger.click = !context._activeTrigger.click
 
@@ -448,7 +448,7 @@ class Tooltip extends BaseComponent {
 
   // Private
 
-  _initialiseOnDelegatedTarget(event, context) {
+  _initializeOnDelegatedTarget(event, context) {
     const dataKey = this.constructor.DATA_KEY
     context = context || Data.getData(event.delegateTarget, dataKey)
 
@@ -589,7 +589,7 @@ class Tooltip extends BaseComponent {
   }
 
   _enter(event, context) {
-    context = this._initialiseOnDelegatedTarget(event, context)
+    context = this._initializeOnDelegatedTarget(event, context)
 
     if (event) {
       context._activeTrigger[
@@ -618,7 +618,7 @@ class Tooltip extends BaseComponent {
   }
 
   _leave(event, context) {
-    context = this._initialiseOnDelegatedTarget(event, context)
+    context = this._initializeOnDelegatedTarget(event, context)
 
     if (event) {
       context._activeTrigger[
