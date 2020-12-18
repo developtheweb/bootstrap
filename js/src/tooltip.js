@@ -239,7 +239,7 @@ class Tooltip extends BaseComponent {
       throw new Error('Please use show on visible elements')
     }
 
-    if (!this.isWithContent() || !this._isEnabled) {
+    if (!(this.isWithContent() && this._isEnabled)) {
       return
     }
 
@@ -467,7 +467,7 @@ class Tooltip extends BaseComponent {
     // https://www.quirksmode.org/blog/archives/2014/02/mouse_event_bub.html
     if ('ontouchstart' in document.documentElement) {
       [].concat(...document.body.children).forEach(element => {
-        EventHandler.on(element, 'mouseover', noop())
+        EventHandler.on(element, 'mouseover', noop)
       })
     }
   }
@@ -597,7 +597,8 @@ class Tooltip extends BaseComponent {
       ] = true
     }
 
-    if (context._hoverState === HOVER_STATE_SHOW) {
+    if (context.getTipElement().classList.contains(CLASS_NAME_SHOW) || context._hoverState === HOVER_STATE_SHOW) {
+      context._hoverState = HOVER_STATE_SHOW
       return
     }
 
