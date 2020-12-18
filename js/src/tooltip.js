@@ -191,13 +191,7 @@ class Tooltip extends BaseComponent {
     }
 
     if (event) {
-      const dataKey = this.constructor.DATA_KEY
-      let context = Data.getData(event.delegateTarget, dataKey)
-
-      if (!context) {
-        context = new this.constructor(event.delegateTarget, this._getDelegateConfig())
-        Data.setData(event.delegateTarget, dataKey, context)
-      }
+      const context = this._initialiseOnDelegatedTarget(event)
 
       context._activeTrigger.click = !context._activeTrigger.click
 
@@ -245,82 +239,76 @@ class Tooltip extends BaseComponent {
       throw new Error('Please use show on visible elements')
     }
 
-    if (this.isWithContent() && this._isEnabled) {
-      const showEvent = EventHandler.trigger(this._element, this.constructor.Event.SHOW)
-      const shadowRoot = findShadowRoot(this._element)
-      const isInTheDom = shadowRoot === null ?
-        this._element.ownerDocument.documentElement.contains(this._element) :
-        shadowRoot.contains(this._element)
+    if (!this.isWithContent() || !this._isEnabled) {
+      return
+    }
 
-      if (showEvent.defaultPrevented || !isInTheDom) {
-        return
+    const showEvent = EventHandler.trigger(this._element, this.constructor.Event.SHOW)
+    const shadowRoot = findShadowRoot(this._element)
+    const isInTheDom = shadowRoot === null ?
+      this._element.ownerDocument.documentElement.contains(this._element) :
+      shadowRoot.contains(this._element)
+
+    if (showEvent.defaultPrevented || !isInTheDom) {
+      return
+    }
+
+    const tip = this.getTipElement()
+    const tipId = getUID(this.constructor.NAME)
+
+    tip.setAttribute('id', tipId)
+    this._element.setAttribute('aria-describedby', tipId)
+
+    this.setContent()
+
+    if (this.config.animation) {
+      tip.classList.add(CLASS_NAME_FADE)
+    }
+
+    const placement = typeof this.config.placement === 'function' ?
+      this.config.placement.call(this, tip, this._element) :
+      this.config.placement
+
+    const attachment = this._getAttachment(placement)
+    this._addAttachmentClass(attachment)
+
+    const container = this._getContainer()
+    Data.setData(tip, this.constructor.DATA_KEY, this)
+
+    if (!this._element.ownerDocument.documentElement.contains(this.tip)) {
+      container.appendChild(tip)
+    }
+
+    EventHandler.trigger(this._element, this.constructor.Event.INSERTED)
+
+    this._popper = Popper.createPopper(this._element, tip, this._getPopperConfig(attachment))
+
+    tip.classList.add(CLASS_NAME_SHOW)
+
+    const customClass = typeof this.config.customClass === 'function' ? this.config.customClass() : this.config.customClass
+    if (customClass) {
+      tip.classList.add(...customClass.split(' '))
+    }
+
+    this._enableIosTouchEventsTrick()
+
+    const complete = () => {
+      const prevHoverState = this._hoverState
+
+      this._hoverState = null
+      EventHandler.trigger(this._element, this.constructor.Event.SHOWN)
+
+      if (prevHoverState === HOVER_STATE_OUT) {
+        this._leave(null, this)
       }
+    }
 
-      const tip = this.getTipElement()
-      const tipId = getUID(this.constructor.NAME)
-
-      tip.setAttribute('id', tipId)
-      this._element.setAttribute('aria-describedby', tipId)
-
-      this.setContent()
-
-      if (this.config.animation) {
-        tip.classList.add(CLASS_NAME_FADE)
-      }
-
-      const placement = typeof this.config.placement === 'function' ?
-        this.config.placement.call(this, tip, this._element) :
-        this.config.placement
-
-      const attachment = this._getAttachment(placement)
-      this._addAttachmentClass(attachment)
-
-      const container = this._getContainer()
-      Data.setData(tip, this.constructor.DATA_KEY, this)
-
-      if (!this._element.ownerDocument.documentElement.contains(this.tip)) {
-        container.appendChild(tip)
-      }
-
-      EventHandler.trigger(this._element, this.constructor.Event.INSERTED)
-
-      this._popper = Popper.createPopper(this._element, tip, this._getPopperConfig(attachment))
-
-      tip.classList.add(CLASS_NAME_SHOW)
-
-      const customClass = typeof this.config.customClass === 'function' ? this.config.customClass() : this.config.customClass
-      if (customClass) {
-        tip.classList.add(...customClass.split(' '))
-      }
-
-      // If this is a touch-enabled device we add extra
-      // empty mouseover listeners to the body's immediate children;
-      // only needed because of broken event delegation on iOS
-      // https://www.quirksmode.org/blog/archives/2014/02/mouse_event_bub.html
-      if ('ontouchstart' in document.documentElement) {
-        [].concat(...document.body.children).forEach(element => {
-          EventHandler.on(element, 'mouseover', noop())
-        })
-      }
-
-      const complete = () => {
-        const prevHoverState = this._hoverState
-
-        this._hoverState = null
-        EventHandler.trigger(this._element, this.constructor.Event.SHOWN)
-
-        if (prevHoverState === HOVER_STATE_OUT) {
-          this._leave(null, this)
-        }
-      }
-
-      if (this.tip.classList.contains(CLASS_NAME_FADE)) {
-        const transitionDuration = getTransitionDurationFromElement(this.tip)
-        EventHandler.one(this.tip, 'transitionend', complete)
-        emulateTransitionEnd(this.tip, transitionDuration)
-      } else {
-        complete()
-      }
+    if (this.tip.classList.contains(CLASS_NAME_FADE)) {
+      const transitionDuration = getTransitionDurationFromElement(this.tip)
+      EventHandler.one(this.tip, 'transitionend', complete)
+      emulateTransitionEnd(this.tip, transitionDuration)
+    } else {
+      complete()
     }
   }
 
@@ -352,12 +340,7 @@ class Tooltip extends BaseComponent {
 
     tip.classList.remove(CLASS_NAME_SHOW)
 
-    // If this is a touch-enabled device we remove the extra
-    // empty mouseover listeners we added for iOS support
-    if ('ontouchstart' in document.documentElement) {
-      [].concat(...document.body.children)
-        .forEach(element => EventHandler.off(element, 'mouseover', noop))
-    }
+    this._enableIosTouchEventsTrick()
 
     this._activeTrigger[TRIGGER_CLICK] = false
     this._activeTrigger[TRIGGER_FOCUS] = false
@@ -440,7 +423,7 @@ class Tooltip extends BaseComponent {
   }
 
   getTitle() {
-    let title = this._element.getAttribute('data-bs-original-title')
+    let title = Manipulator.getDataAttribute(this._element, 'original-title')
 
     if (!title) {
       title = typeof this.config.title === 'function' ?
@@ -464,6 +447,30 @@ class Tooltip extends BaseComponent {
   }
 
   // Private
+
+  _initialiseOnDelegatedTarget(event, context) {
+    const dataKey = this.constructor.DATA_KEY
+    context = context || Data.getData(event.delegateTarget, dataKey)
+
+    if (!context) {
+      context = new this.constructor(event.delegateTarget, this._getDelegateConfig())
+      Data.setData(event.delegateTarget, dataKey, context)
+    }
+
+    return context
+  }
+
+  _enableIosTouchEventsTrick() {
+    // If this is a touch-enabled device we add extra
+    // empty mouseover listeners to the body's immediate children;
+    // only needed because of broken event delegation on iOS
+    // https://www.quirksmode.org/blog/archives/2014/02/mouse_event_bub.html
+    if ('ontouchstart' in document.documentElement) {
+      [].concat(...document.body.children).forEach(element => {
+        EventHandler.on(element, 'mouseover', noop())
+      })
+    }
+  }
 
   _getPopperConfig(attachment) {
     const defaultBsConfig = {
@@ -546,7 +553,7 @@ class Tooltip extends BaseComponent {
         EventHandler.on(this._element, eventIn, this.config.selector, event => this._enter(event))
         EventHandler.on(this._element, eventOut, this.config.selector, event => this._leave(event))
       }
-    })
+    }, this)
 
     this._hideModalHandler = () => {
       if (this._element) {
@@ -569,10 +576,10 @@ class Tooltip extends BaseComponent {
 
   _fixTitle() {
     const title = this._element.getAttribute('title')
-    const originalTitleType = typeof this._element.getAttribute('data-bs-original-title')
+    const originalTitleType = typeof Manipulator.getDataAttribute(this._element, 'original-title')
 
     if (title || originalTitleType !== 'string') {
-      this._element.setAttribute('data-bs-original-title', title || '')
+      Manipulator.setDataAttribute(this._element, 'original-title', title || '')
       if (title && !this._element.getAttribute('aria-label') && !this._element.textContent) {
         this._element.setAttribute('aria-label', title)
       }
@@ -582,16 +589,7 @@ class Tooltip extends BaseComponent {
   }
 
   _enter(event, context) {
-    const dataKey = this.constructor.DATA_KEY
-    context = context || Data.getData(event.delegateTarget, dataKey)
-
-    if (!context) {
-      context = new this.constructor(
-        event.delegateTarget,
-        this._getDelegateConfig()
-      )
-      Data.setData(event.delegateTarget, dataKey, context)
-    }
+    context = this._initialiseOnDelegatedTarget(event, context)
 
     if (event) {
       context._activeTrigger[
@@ -599,8 +597,7 @@ class Tooltip extends BaseComponent {
       ] = true
     }
 
-    if (context.getTipElement().classList.contains(CLASS_NAME_SHOW) || context._hoverState === HOVER_STATE_SHOW) {
-      context._hoverState = HOVER_STATE_SHOW
+    if (context._hoverState === HOVER_STATE_SHOW) {
       return
     }
 
@@ -621,16 +618,7 @@ class Tooltip extends BaseComponent {
   }
 
   _leave(event, context) {
-    const dataKey = this.constructor.DATA_KEY
-    context = context || Data.getData(event.delegateTarget, dataKey)
-
-    if (!context) {
-      context = new this.constructor(
-        event.delegateTarget,
-        this._getDelegateConfig()
-      )
-      Data.setData(event.delegateTarget, dataKey, context)
-    }
+    context = this._initialiseOnDelegatedTarget(event, context)
 
     if (event) {
       context._activeTrigger[
